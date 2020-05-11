@@ -12,18 +12,19 @@ pub const COLUMN: usize = 16;
 
 pub type Screen = [[u8; COLUMN as usize]; ROW as usize];
 
-pub trait Bus<E> {
-    fn write(&self, bytes: &[u8]) -> Result<(), E>;
-    fn write_read(&self, input: &[u8], output: &mut [u8]) -> Result<(), E>;
+pub trait Spi {
+    type Error;
+    fn write(&self, bytes: &[u8]) -> Result<(), Self::Error>;
+    fn write_read(&self, input: &[u8], output: &mut [u8]) -> Result<(), Self::Error>;
 }
 
 pub trait DelayUs {
     fn delay_us(&self, us: usize);
 }
 
-pub struct MAX7456<'a, E> {
-    bus: Cell<&'a dyn Bus<E>>,
-    delay: Cell<&'a dyn DelayUs>,
+pub struct MAX7456<'a, S, D> {
+    bus: Cell<&'a S>,
+    delay: Cell<&'a D>,
 }
 
 pub struct Attributes {
@@ -42,36 +43,36 @@ impl Default for Attributes {
     }
 }
 
-impl<'a, E> MAX7456<'a, E> {
-    pub fn new(bus: &'a dyn Bus<E>, delay: &'a dyn DelayUs) -> Self {
+impl<'a, S: Spi, D: DelayUs> MAX7456<'a, S, D> {
+    pub fn new(bus: &'a S, delay: &'a D) -> Self {
         MAX7456 {
             bus: Cell::new(bus),
             delay: Cell::new(delay),
         }
     }
 
-    fn load<T: From<u8>>(&self, reg: Registers) -> Result<T, E> {
+    fn load<T: From<u8>>(&self, reg: Registers) -> Result<T, S::Error> {
         let bus = self.bus.get();
         let mut value = [0u8; 1];
         bus.write_read(&[reg.read_address()], &mut value)?;
         Ok(T::from(value[0]))
     }
 
-    pub fn disable_display(&self, disable: bool) -> Result<(), E> {
+    pub fn disable_display(&self, disable: bool) -> Result<(), S::Error> {
         let mut video_mode_0: Register<u8, VideoMode0> = self.load(Registers::VideoMode0)?;
         video_mode_0.set(VideoMode0::EnableDisplay, disable as u8);
         let bus = self.bus.get();
         bus.write(&[Registers::VideoMode0 as u8, video_mode_0.value])
     }
 
-    pub fn set_standard(&self, standard: Standard) -> Result<(), E> {
+    pub fn set_standard(&self, standard: Standard) -> Result<(), S::Error> {
         let mut video_mode_0: Register<u8, VideoMode0> = self.load(Registers::VideoMode0)?;
         video_mode_0.set(VideoMode0::Standard, standard as u8);
         let bus = self.bus.get();
         bus.write(&[Registers::VideoMode0 as u8, video_mode_0.value])
     }
 
-    pub fn clear_display(&self) -> Result<(), E> {
+    pub fn clear_display(&self) -> Result<(), S::Error> {
         let mut dmm: Register<u8, DisplayMemoryMode> = self.load(Registers::DisplayMemoryMode)?;
         dmm.set(DisplayMemoryMode::Clear, 1);
         let bus = self.bus.get();
@@ -84,7 +85,7 @@ impl<'a, E> MAX7456<'a, E> {
         Ok(())
     }
 
-    pub fn write_char(&self, index: u8, data: &[u8; CHAR_DATA_SIZE]) -> Result<(), E> {
+    pub fn write_char(&self, index: u8, data: &[u8; CHAR_DATA_SIZE]) -> Result<(), S::Error> {
         self.disable_display(true)?;
         let mut operations = [0u8; 2 + CHAR_DATA_SIZE * 4 + 2];
         operations[0] = Registers::CharacterMemoryAddressHigh as u8;
@@ -119,7 +120,7 @@ impl<'a, E> MAX7456<'a, E> {
         column: u8,
         data: &[u8],
         attributes: Attributes,
-    ) -> Result<usize, E> {
+    ) -> Result<usize, S::Error> {
         let mut operations = [0u8; 6 + ROW * 2 + 1];
         operations[0] = Registers::DisplayMemoryMode as u8;
         let mut dmm = Register::<u8, DisplayMemoryMode>::new(0);
@@ -159,7 +160,11 @@ impl<'a, E> MAX7456<'a, E> {
         Ok(slice.len())
     }
 
-    pub fn display_not_null(&self, screen: &Screen, attributes: Attributes) -> Result<(), E> {
+    pub fn display_not_null(
+        &self,
+        screen: &Screen,
+        attributes: Attributes,
+    ) -> Result<(), S::Error> {
         let bus = self.bus.get();
         let mut operations = [0u8; 2 + COLUMN * 6];
         operations[0] = Registers::DisplayMemoryMode as u8;
