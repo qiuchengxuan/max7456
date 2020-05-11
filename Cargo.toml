@@ -1,0 +1,12 @@
+[package]
+name = "max7456"
+version = "0.1.1"
+authors = ["qiuchengxuan <qiuchengxuan@gmail.com>"]
+edition = "2018"
+description = "implement driver for OSD MAX7456"
+license = "MIT"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+peripheral-register = "0.1.3"
