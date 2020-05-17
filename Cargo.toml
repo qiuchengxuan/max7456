@@ -1,6 +1,6 @@
 [package]
 name = "max7456"
-version = "0.1.3"
+version = "0.1.4"
 authors = ["qiuchengxuan <qiuchengxuan@gmail.com>"]
 edition = "2018"
 description = "implement driver for OSD MAX7456"
@@ -10,3 +10,4 @@ license = "MIT"
 
 [dependencies]
 peripheral-register = "0.1.4"
+embedded-hal = "0.2.3"
