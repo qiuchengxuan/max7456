@@ -1,6 +1,6 @@
 [package]
 name = "max7456"
-version = "0.1.4"
+version = "0.1.5"
 authors = ["qiuchengxuan <qiuchengxuan@gmail.com>"]
 edition = "2018"
 description = "implement driver for OSD MAX7456"
