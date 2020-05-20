@@ -54,7 +54,7 @@ impl<'a, T: AsRef<[u8]>> NotNullWriter<'a, T> {
         return offset;
     }
 
-    pub fn write<'b>(&mut self, buffer: &'b mut [u8]) -> Option<Display<'b>> {
+    pub fn write<'b>(&mut self, buffer: &'b mut [u8]) -> Display<'b> {
         assert!(buffer.len() >= 8);
 
         buffer[0] = Registers::DisplayMemoryMode as u8;
@@ -78,7 +78,7 @@ impl<'a, T: AsRef<[u8]>> NotNullWriter<'a, T> {
             if length > 0 {
                 offset += length + 2;
                 if offset + 6 > buffer.len() {
-                    return Some(Display(&buffer[..offset]));
+                    return Display(&buffer[..offset]);
                 }
             }
         }
@@ -88,12 +88,28 @@ impl<'a, T: AsRef<[u8]>> NotNullWriter<'a, T> {
         if length > 0 {
             offset += length + 2;
         }
-        if offset > 2 {
-            Some(Display(&buffer[..offset]))
-        } else {
-            None
+        if offset + 1 < buffer.len() {
+            buffer[offset + 1] = 0; // in case of revert
+        }
+
+        Display(&buffer[..if offset > 2 { offset } else { 0 }])
+    }
+}
+
+pub fn revert(buffer: &mut [u8]) -> Display {
+    if buffer[0] != Registers::DisplayMemoryMode as u8 {
+        return Display(&buffer[..0]);
+    }
+    for i in 1..buffer.len() / 2 {
+        match buffer[i * 2] {
+            b if b == Registers::DisplayMemoryDataIn as u8 => buffer[i * 2 + 1] = 0,
+            b if b == Registers::CharacterMemoryAddressLow as u8 => continue,
+            b if b == Registers::CharacterMemoryAddressHigh as u8 => continue,
+            0 => return Display(&buffer[..(i - 1) * 2]),
+            _ => return Display(&buffer[..0]),
         }
     }
+    Display(buffer)
 }
 
 #[cfg(test)]
@@ -107,7 +123,7 @@ mod test {
         screen[7][29] = 't' as u8;
         let mut writer = NotNullWriter::new(&screen, Default::default());
         let expected = "[4, 0, 5, 0, 6, ef, 7, 74]";
-        let actual = format!("{:x?}", writer.write(&mut output).unwrap().0);
+        let actual = format!("{:x?}", writer.write(&mut output).0);
         assert_eq!(actual, expected);
     }
 
@@ -118,7 +134,7 @@ mod test {
         screen[8][29] = 't' as u8;
         let mut writer = NotNullWriter::new(&screen, Default::default());
         let expected = "[4, 0, 5, 1, 6, d, 7, 74]";
-        let actual = format!("{:x?}", writer.write(&mut output).unwrap().0);
+        let actual = format!("{:x?}", writer.write(&mut output).0);
         assert_eq!(actual, expected);
     }
 
@@ -130,7 +146,7 @@ mod test {
         screen[8][15] = 't' as u8;
         let mut writer = NotNullWriter::new(&screen, Default::default());
         let expected = "[4, 0, 5, 0, 6, ef, 7, 74, 6, ff, 7, 74]";
-        let actual = format!("{:x?}", writer.write(&mut output).unwrap().0);
+        let actual = format!("{:x?}", writer.write(&mut output).0);
         assert_eq!(actual, expected);
     }
 
@@ -142,7 +158,7 @@ mod test {
         screen[8][29] = 't' as u8;
         let mut writer = NotNullWriter::new(&screen, Default::default());
         let expected = "[4, 0, 5, 0, 6, ef, 7, 74, 5, 1, 6, d, 7, 74]";
-        let actual = format!("{:x?}", writer.write(&mut output).unwrap().0);
+        let actual = format!("{:x?}", writer.write(&mut output).0);
         assert_eq!(actual, expected);
     }
 
@@ -154,10 +170,10 @@ mod test {
         screen[8][29] = 't' as u8;
         let mut writer = NotNullWriter::new(&screen, Default::default());
         let expected = "[4, 0, 5, 0, 6, ef, 7, 74, 5, 1, 6, d, 7, 74]";
-        let actual = format!("{:x?}", writer.write(&mut output).unwrap().0);
+        let actual = format!("{:x?}", writer.write(&mut output).0);
         assert_eq!(actual, expected);
 
-        assert_eq!(writer.write(&mut output), None)
+        assert_eq!(writer.write(&mut output).0.len(), 0)
     }
 
     #[test]
@@ -168,11 +184,11 @@ mod test {
         screen[8][29] = 't' as u8;
         let mut writer = NotNullWriter::new(&screen, Default::default());
         let expected = "[4, 0, 5, 0, 6, ef, 7, 74]";
-        let actual = format!("{:x?}", writer.write(&mut output).unwrap().0);
+        let actual = format!("{:x?}", writer.write(&mut output).0);
         assert_eq!(actual, expected);
 
         let expected = "[4, 0, 5, 1, 6, d, 7, 74]";
-        let actual = format!("{:x?}", writer.write(&mut output).unwrap().0);
+        let actual = format!("{:x?}", writer.write(&mut output).0);
         assert_eq!(actual, expected);
     }
 
@@ -184,11 +200,11 @@ mod test {
         screen[8][28] = 't' as u8;
         let mut writer = NotNullWriter::new(&screen, Default::default());
         let expected = "[4, 0, 5, 0, 6, ee, 7, 74]";
-        let actual = format!("{:x?}", writer.write(&mut output).unwrap().0);
+        let actual = format!("{:x?}", writer.write(&mut output).0);
         assert_eq!(actual, expected);
 
         let expected = "[4, 0, 5, 1, 6, c, 7, 74]";
-        let actual = format!("{:x?}", writer.write(&mut output).unwrap().0);
+        let actual = format!("{:x?}", writer.write(&mut output).0);
         assert_eq!(actual, expected);
     }
 }
