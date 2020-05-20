@@ -1,7 +1,7 @@
 use peripheral_register::Register;
 
 use crate::registers::{DisplayMemoryMode, OperationMode, Registers};
-use crate::{display_memory_address, Attributes, Operations};
+use crate::{display_memory_address, Attributes, Display};
 
 pub struct IncrementalWriter<'a> {
     bytes: &'a [u8],
@@ -24,7 +24,7 @@ impl<'a> IncrementalWriter<'a> {
         self.bytes.len() - self.index
     }
 
-    pub fn write<'b>(&mut self, buffer: &'b mut [u8]) -> Option<Operations<'b>> {
+    pub fn write<'b>(&mut self, buffer: &'b mut [u8]) -> Option<Display<'b>> {
         assert!(buffer.len() >= 10);
 
         buffer[0] = Registers::DisplayMemoryMode as u8;
@@ -67,7 +67,7 @@ impl<'a> IncrementalWriter<'a> {
         buffer[offset + 1] = 0xFF;
         self.index += written;
         self.address += written as u16;
-        Some(Operations(&buffer[..offset + 2]))
+        Some(Display(&buffer[..offset + 2]))
     }
 }
 

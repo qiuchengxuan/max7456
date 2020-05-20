@@ -9,6 +9,7 @@ use embedded_hal::blocking::delay::{DelayMs, DelayUs};
 use embedded_hal::blocking::spi::{Transfer, Write};
 use embedded_hal::spi::{Mode, Phase, Polarity};
 use peripheral_register::Register;
+
 use registers::*;
 
 pub const CHAR_DATA_SIZE: usize = 54;
@@ -31,7 +32,7 @@ pub struct Attributes {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Operations<'a>(&'a [u8]);
+pub struct Display<'a>(pub &'a [u8]);
 
 impl Default for Attributes {
     fn default() -> Self {
@@ -88,19 +89,34 @@ impl<'a, E, BUS: Write<u8, Error = E> + Transfer<u8, Error = E>> MAX7456<BUS> {
             .write(&[Registers::VideoMode0 as u8, video_mode_0.value])
     }
 
-    pub fn clear_display<D: DelayUs<u8>>(&mut self, delay: &mut D) -> Result<bool, E> {
-        let mut dmm: Register<u8, DisplayMemoryMode> = self.load(Registers::DisplayMemoryMode)?;
-        dmm.set(DisplayMemoryMode::Clear, 1);
+    pub fn set_horizental_offset(&mut self, offset: i8) -> Result<(), E> {
+        // -32 ~ +31
         self.bus
-            .write(&[Registers::DisplayMemoryMode as u8, dmm.value])?;
-        for _ in 0..5 {
-            delay.delay_us(20);
-            dmm = self.load(Registers::DisplayMemoryMode)?;
-            if dmm.get(DisplayMemoryMode::Clear) == 0 {
-                return Ok(true);
-            }
-        }
-        Ok(false)
+            .write(&[Registers::HorizentalOffset as u8, (offset + 32) as u8])
+    }
+
+    pub fn set_vertical_offset(&mut self, offset: i8) -> Result<(), E> {
+        // -16 ~ +15
+        self.bus
+            .write(&[Registers::VerticalOffset as u8, (offset + 16) as u8])
+    }
+
+    pub fn start_clear_display(&mut self) -> Result<(), E> {
+        let dmm: Register<u8, DisplayMemoryMode> = Register::of(DisplayMemoryMode::Clear, 1);
+        self.bus
+            .write(&[Registers::DisplayMemoryMode as u8, dmm.value])
+    }
+
+    pub fn is_display_cleared(&mut self) -> Result<bool, E> {
+        let dmm: Register<u8, DisplayMemoryMode> = self.load(Registers::DisplayMemoryMode)?;
+        Ok(dmm.get(DisplayMemoryMode::Clear) == 0)
+    }
+
+    pub fn wait_clear_display(&mut self, delay: &mut dyn DelayUs<u8>) -> Result<(), E> {
+        self.start_clear_display()?;
+        delay.delay_us(20);
+        while !self.is_display_cleared()? {}
+        Ok(())
     }
 
     pub fn store_char<D: DelayMs<u8>>(
@@ -134,8 +150,8 @@ impl<'a, E, BUS: Write<u8, Error = E> + Transfer<u8, Error = E>> MAX7456<BUS> {
         self.enable_display(true)
     }
 
-    pub fn write_operations(&mut self, operations: &Operations) -> Result<(), E> {
-        self.bus.write(&operations.0)
+    pub fn write_display(&mut self, display: &Display) -> Result<(), E> {
+        self.bus.write(&display.0)
     }
 }
 
