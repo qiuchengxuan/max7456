@@ -15,20 +15,13 @@ pub struct NotNullWriter<'a, T> {
 
 impl<'a, T: AsRef<[u8]>> NotNullWriter<'a, T> {
     pub fn new(screen: &'a [T], attributes: Attributes) -> Self {
-        Self {
-            screen,
-            attributes,
-            address: 0,
-        }
+        Self { screen, attributes, address: 0 }
     }
 
     fn dump_bytes(&mut self, limit: u16, buffer: &mut [u8]) -> usize {
         let mut offset = 0;
         let max_column = min(self.screen[0].as_ref().len(), COLUMN);
-        let real_limit = min(
-            limit,
-            ((self.screen.len() - 1) * COLUMN + max_column) as u16,
-        );
+        let real_limit = min(limit, ((self.screen.len() - 1) * COLUMN + max_column) as u16);
         while self.address < real_limit {
             let row = self.address as usize / COLUMN;
             let column = self.address as usize % COLUMN;
@@ -59,10 +52,7 @@ impl<'a, T: AsRef<[u8]>> NotNullWriter<'a, T> {
 
         buffer[0] = Registers::DisplayMemoryMode as u8;
         let mut dmm = Register::<u8, DisplayMemoryMode>::new(0);
-        dmm.set(
-            DisplayMemoryMode::OperationMode,
-            OperationMode::Mode16Bit as u8,
-        );
+        dmm.set(DisplayMemoryMode::OperationMode, OperationMode::Mode16Bit as u8);
         dmm.set(
             DisplayMemoryMode::LocalBackgroundControl,
             self.attributes.local_background_control as u8,
@@ -88,8 +78,8 @@ impl<'a, T: AsRef<[u8]>> NotNullWriter<'a, T> {
         if length > 0 {
             offset += length + 2;
         }
-        if offset + 1 < buffer.len() {
-            buffer[offset + 1] = 0; // in case of revert
+        if offset < buffer.len() {
+            buffer[offset] = 0; // in case of revert
         }
 
         Display(&buffer[..if offset > 2 { offset } else { 0 }])
@@ -102,7 +92,7 @@ pub fn revert(buffer: &mut [u8]) -> Display {
     }
     for i in 1..buffer.len() / 2 {
         match buffer[i * 2] {
-            b if b == Registers::DisplayMemoryDataIn as u8 => buffer[i * 2 + 1] = 0,
+            b if b == Registers::DisplayMemoryDataIn as u8 => buffer[i * 2 + 1] = 0u8,
             b if b == Registers::CharacterMemoryAddressLow as u8 => continue,
             b if b == Registers::CharacterMemoryAddressHigh as u8 => continue,
             0 => return Display(&buffer[..(i - 1) * 2]),

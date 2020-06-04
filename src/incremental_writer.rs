@@ -12,12 +12,7 @@ pub struct IncrementalWriter<'a> {
 
 impl<'a> IncrementalWriter<'a> {
     pub fn new(bytes: &'a [u8], row: u8, column: u8, attributes: Attributes) -> Self {
-        Self {
-            bytes,
-            address: display_memory_address(row, column),
-            attributes,
-            index: 0,
-        }
+        Self { bytes, address: display_memory_address(row, column), attributes, index: 0 }
     }
 
     pub fn remain(&self) -> usize {
@@ -29,10 +24,7 @@ impl<'a> IncrementalWriter<'a> {
 
         buffer[0] = Registers::DisplayMemoryMode as u8;
         let mut dmm = Register::<u8, DisplayMemoryMode>::new(0);
-        dmm.set(
-            DisplayMemoryMode::OperationMode,
-            OperationMode::Mode16Bit as u8,
-        );
+        dmm.set(DisplayMemoryMode::OperationMode, OperationMode::Mode16Bit as u8);
         dmm.set(
             DisplayMemoryMode::LocalBackgroundControl,
             self.attributes.local_background_control as u8,

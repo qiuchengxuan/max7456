@@ -13,13 +13,12 @@ use peripheral_register::Register;
 use registers::*;
 
 pub const CHAR_DATA_SIZE: usize = 54;
+pub const STORE_CHAR_BUFFER_SIZE: usize = 2 + CHAR_DATA_SIZE * 4 + 2;
 pub const ROW: usize = 16;
 pub const COLUMN: usize = 30;
 
-pub const SPI_MODE: Mode = Mode {
-    polarity: Polarity::IdleHigh,
-    phase: Phase::CaptureOnSecondTransition,
-};
+pub const SPI_MODE: Mode =
+    Mode { polarity: Polarity::IdleHigh, phase: Phase::CaptureOnSecondTransition };
 
 pub struct MAX7456<BUS> {
     bus: BUS,
@@ -36,11 +35,7 @@ pub struct Display<'a>(pub &'a [u8]);
 
 impl Default for Attributes {
     fn default() -> Self {
-        Self {
-            local_background_control: false,
-            blink: false,
-            revert: false,
-        }
+        Self { local_background_control: false, blink: false, revert: false }
     }
 }
 
@@ -56,10 +51,9 @@ impl<'a, E, BUS: Write<u8, Error = E> + Transfer<u8, Error = E>> MAX7456<BUS> {
         Ok(T::from(value[0]))
     }
 
-    pub fn reset<D: DelayMs<u8>>(&mut self, delay: &mut D) -> Result<(), E> {
+    pub fn reset(&mut self, delay: &mut dyn DelayMs<u8>) -> Result<(), E> {
         let mut video_mode_0: Register<u8, VideoMode0> = Register::of(VideoMode0::SoftwareReset, 1);
-        self.bus
-            .write(&[Registers::VideoMode0 as u8, video_mode_0.value])?;
+        self.bus.write(&[Registers::VideoMode0 as u8, video_mode_0.value])?;
         delay.delay_ms(50u8);
         while video_mode_0.get(VideoMode0::SoftwareReset) > 0 {
             video_mode_0 = self.load(Registers::VideoMode0)?;
@@ -71,40 +65,34 @@ impl<'a, E, BUS: Write<u8, Error = E> + Transfer<u8, Error = E>> MAX7456<BUS> {
     pub fn enable_display(&mut self, enable: bool) -> Result<(), E> {
         let mut video_mode_0: Register<u8, VideoMode0> = self.load(Registers::VideoMode0)?;
         video_mode_0.set(VideoMode0::EnableDisplay, enable as u8);
-        self.bus
-            .write(&[Registers::VideoMode0 as u8, video_mode_0.value])
+        self.bus.write(&[Registers::VideoMode0 as u8, video_mode_0.value])
     }
 
     pub fn set_standard(&mut self, standard: Standard) -> Result<(), E> {
         let mut video_mode_0: Register<u8, VideoMode0> = self.load(Registers::VideoMode0)?;
         video_mode_0.set(VideoMode0::Standard, standard as u8);
-        self.bus
-            .write(&[Registers::VideoMode0 as u8, video_mode_0.value])
+        self.bus.write(&[Registers::VideoMode0 as u8, video_mode_0.value])
     }
 
     pub fn set_sync_mode(&mut self, sync_mode: SyncMode) -> Result<(), E> {
         let mut video_mode_0: Register<u8, VideoMode0> = self.load(Registers::VideoMode0)?;
         video_mode_0.set(VideoMode0::SyncMode, sync_mode as u8);
-        self.bus
-            .write(&[Registers::VideoMode0 as u8, video_mode_0.value])
+        self.bus.write(&[Registers::VideoMode0 as u8, video_mode_0.value])
     }
 
     pub fn set_horizental_offset(&mut self, offset: i8) -> Result<(), E> {
         // -32 ~ +31
-        self.bus
-            .write(&[Registers::HorizentalOffset as u8, (offset + 32) as u8])
+        self.bus.write(&[Registers::HorizentalOffset as u8, (offset + 32) as u8])
     }
 
     pub fn set_vertical_offset(&mut self, offset: i8) -> Result<(), E> {
         // -16 ~ +15
-        self.bus
-            .write(&[Registers::VerticalOffset as u8, (offset + 16) as u8])
+        self.bus.write(&[Registers::VerticalOffset as u8, (offset + 16) as u8])
     }
 
     pub fn start_clear_display(&mut self) -> Result<(), E> {
         let dmm: Register<u8, DisplayMemoryMode> = Register::of(DisplayMemoryMode::Clear, 1);
-        self.bus
-            .write(&[Registers::DisplayMemoryMode as u8, dmm.value])
+        self.bus.write(&[Registers::DisplayMemoryMode as u8, dmm.value])
     }
 
     pub fn is_display_cleared(&mut self) -> Result<bool, E> {
@@ -119,6 +107,24 @@ impl<'a, E, BUS: Write<u8, Error = E> + Transfer<u8, Error = E>> MAX7456<BUS> {
         Ok(())
     }
 
+    pub fn store_char_transaction(data: &[u8], index: u8, output: &mut [u8]) -> bool {
+        if output.len() < STORE_CHAR_BUFFER_SIZE {
+            return false;
+        }
+        output[0] = Registers::CharacterMemoryAddressHigh as u8;
+        output[1] = index;
+        for i in 0..data.len() {
+            let offset = i * 4;
+            output[offset] = Registers::CharacterMemoryAddressLow as u8;
+            output[offset + 1] = i as u8;
+            output[offset + 2] = Registers::CharacterMemoryDataIn as u8;
+            output[offset + 3] = data[i];
+        }
+        output[2 + CHAR_DATA_SIZE * 4] = CharacterMemoryMode::WriteToNVM as u8;
+        output[2 + CHAR_DATA_SIZE * 4 + 1] = Registers::CharacterMemoryMode as u8;
+        return true;
+    }
+
     pub fn store_char<D: DelayMs<u8>>(
         &mut self,
         index: u8,
@@ -126,19 +132,9 @@ impl<'a, E, BUS: Write<u8, Error = E> + Transfer<u8, Error = E>> MAX7456<BUS> {
         delay: &mut D,
     ) -> Result<(), E> {
         self.enable_display(false)?;
-        let mut operations = [0u8; 2 + CHAR_DATA_SIZE * 4 + 2];
-        operations[0] = Registers::CharacterMemoryAddressHigh as u8;
-        operations[1] = index;
-        for i in 0..data.len() {
-            let offset = i * 4;
-            operations[offset] = Registers::CharacterMemoryAddressLow as u8;
-            operations[offset + 1] = i as u8;
-            operations[offset + 2] = Registers::CharacterMemoryDataIn as u8;
-            operations[offset + 3] = data[i];
-        }
-        operations[2 + 54 * 3] = CharacterMemoryMode::WriteToNVM as u8;
-        operations[2 + 54 * 3 + 1] = Registers::CharacterMemoryMode as u8;
-        self.bus.write(&operations)?;
+        let mut transaction = [0u8; 2 + CHAR_DATA_SIZE * 4 + 2];
+        Self::store_char_transaction(data, index, &mut transaction);
+        self.bus.write(&transaction)?;
         delay.delay_ms(12);
         loop {
             let status: Register<u8, Status> = self.load(Registers::Status)?;
