@@ -1,10 +1,13 @@
 #![no_std]
 extern crate peripheral_register;
 
+pub mod character_memory;
+pub mod font;
 pub mod incremental_writer;
 pub mod not_null_writer;
 pub mod registers;
 
+use character_memory::{write_store_char_operation, CharData, STORE_CHAR_BUFFER_SIZE};
 use embedded_hal::blocking::delay::{DelayMs, DelayUs};
 use embedded_hal::blocking::spi::{Transfer, Write};
 use embedded_hal::spi::{Mode, Phase, Polarity};
@@ -12,8 +15,6 @@ use peripheral_register::Register;
 
 use registers::*;
 
-pub const CHAR_DATA_SIZE: usize = 54;
-pub const STORE_CHAR_BUFFER_SIZE: usize = 2 + CHAR_DATA_SIZE * 4 + 2;
 pub const ROW: usize = 16;
 pub const COLUMN: usize = 30;
 
@@ -107,33 +108,14 @@ impl<'a, E, BUS: Write<u8, Error = E> + Transfer<u8, Error = E>> MAX7456<BUS> {
         Ok(())
     }
 
-    pub fn store_char_transaction(data: &[u8], index: u8, output: &mut [u8]) -> bool {
-        if output.len() < STORE_CHAR_BUFFER_SIZE {
-            return false;
-        }
-        output[0] = Registers::CharacterMemoryAddressHigh as u8;
-        output[1] = index;
-        for i in 0..data.len() {
-            let offset = i * 4;
-            output[offset] = Registers::CharacterMemoryAddressLow as u8;
-            output[offset + 1] = i as u8;
-            output[offset + 2] = Registers::CharacterMemoryDataIn as u8;
-            output[offset + 3] = data[i];
-        }
-        output[2 + CHAR_DATA_SIZE * 4] = CharacterMemoryMode::WriteToNVM as u8;
-        output[2 + CHAR_DATA_SIZE * 4 + 1] = Registers::CharacterMemoryMode as u8;
-        return true;
-    }
-
-    pub fn store_char<D: DelayMs<u8>>(
+    pub fn store_char(
         &mut self,
         index: u8,
-        data: &[u8; CHAR_DATA_SIZE],
-        delay: &mut D,
+        data: &CharData,
+        delay: &mut dyn DelayMs<u8>,
     ) -> Result<(), E> {
-        self.enable_display(false)?;
-        let mut transaction = [0u8; 2 + CHAR_DATA_SIZE * 4 + 2];
-        Self::store_char_transaction(data, index, &mut transaction);
+        let mut transaction = [0u8; STORE_CHAR_BUFFER_SIZE];
+        write_store_char_operation(data, index, &mut transaction);
         self.bus.write(&transaction)?;
         delay.delay_ms(12);
         loop {
@@ -143,7 +125,7 @@ impl<'a, E, BUS: Write<u8, Error = E> + Transfer<u8, Error = E>> MAX7456<BUS> {
                 break;
             }
         }
-        self.enable_display(true)
+        Ok(())
     }
 
     pub fn write_display(&mut self, display: &Display) -> Result<(), E> {
