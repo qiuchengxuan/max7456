@@ -108,6 +108,20 @@ impl<'a, E, BUS: Write<u8, Error = E> + Transfer<u8, Error = E>> MAX7456<BUS> {
         Ok(())
     }
 
+    pub fn load_char(&mut self, index: u8, output: &mut CharData) -> Result<(), E> {
+        self.bus.write(&[
+            Registers::CharacterMemoryAddressHigh as u8,
+            index,
+            Registers::CharacterMemoryMode as u8,
+            CharacterMemoryMode::ReadFromNVM as u8,
+        ])?;
+        for i in 0..64 {
+            self.bus.write(&[Registers::CharacterMemoryAddressLow as u8, i as u8])?;
+            output[i] = self.load(Registers::CharacterMemoryDataOut)?;
+        }
+        Ok(())
+    }
+
     pub fn store_char(
         &mut self,
         index: u8,
