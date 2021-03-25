@@ -3,6 +3,8 @@ use peripheral_register::Register;
 use crate::registers::{DisplayMemoryMode, OperationMode, Registers};
 use crate::{display_memory_address, Attributes, Display};
 
+/// Incremental writer starting from given row and column
+/// based on MAX7456 incremental write capability
 pub struct IncrementalWriter<'a> {
     bytes: &'a [u8],
     address: u16,
@@ -71,9 +73,8 @@ mod test {
     fn test_functional() {
         let mut output = [0u8; 32];
         let mut writer = IncrementalWriter::new(b"test", 0, 0, Default::default());
-        let expected = "[4, 1, 5, 0, 6, 0, 7, 74, 7, 65, 7, 73, 7, 74, 7, ff]";
-        let actual = format!("{:x?}", writer.write(&mut output).unwrap().0);
-        assert_eq!(actual, expected);
+        let expected = hex!("04 01 05 00 06 00 07 74 07 65 07 73 07 74 07 FF");
+        assert_eq!(writer.write(&mut output).unwrap().0, expected);
     }
 
     #[test]
@@ -81,15 +82,17 @@ mod test {
         let mut output = [0u8; 6 + 26 + 2];
         let upper_letters = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
         let mut writer = IncrementalWriter::new(upper_letters, 0, 0, Default::default());
-        let actual = format!("{:x?}", writer.write(&mut output).unwrap().0);
-        let expected = "[4, 1, 5, 0, 6, 0, 7, 41, 7, 42, 7, 43, 7, 44, 7, 45, 7, 46, 7, 47, 7, \
-                         48, 7, 49, 7, 4a, 7, 4b, 7, 4c, 7, 4d, 7, ff]";
-        assert_eq!(actual, expected);
+        let expected = hex!(
+            "04 01 05 00 06 00 07 41 07 42 07 43 07 44 07 45
+             07 46 07 47 07 48 07 49 07 4A 07 4B 07 4C 07 4D 07 FF"
+        );
+        assert_eq!(writer.write(&mut output).unwrap().0, expected);
         assert_eq!(writer.remain() > 0, true);
-        let actual = format!("{:x?}", writer.write(&mut output).unwrap().0);
-        let expected = "[4, 1, 5, 0, 6, d, 7, 4e, 7, 4f, 7, 50, 7, 51, 7, 52, 7, 53, 7, 54, 7, \
-                         55, 7, 56, 7, 57, 7, 58, 7, 59, 7, 5a, 7, ff]";
-        assert_eq!(actual, expected);
+        let expected = hex!(
+            "04 01 05 00 06 0D 07 4E 07 4F 07 50 07 51 07 52
+             07 53 07 54 07 55 07 56 07 57 07 58 07 59 07 5A 07 FF"
+        );
+        assert_eq!(writer.write(&mut output).unwrap().0, expected);
         assert_eq!(writer.remain(), 0);
     }
 }

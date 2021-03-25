@@ -7,21 +7,23 @@ use crate::{Attributes, Display, COLUMN, ROW};
 
 const MAX_ADDRESS: u16 = (ROW * COLUMN) as u16;
 
-pub struct NotNullWriter<'a, T> {
-    screen: &'a [T],
+/// Full lines writer which write every char with specified row and column
+/// `null` chars will be ignored
+pub struct LinesWriter<'a, T> {
+    lines: &'a [T],
     attributes: Attributes,
     address: u16,
 }
 
-impl<'a, T: AsRef<[u8]>> NotNullWriter<'a, T> {
-    pub fn new(screen: &'a [T], attributes: Attributes) -> Self {
-        Self { screen, attributes, address: 0 }
+impl<'a, T: AsRef<[u8]>> LinesWriter<'a, T> {
+    pub fn new(lines: &'a [T], attributes: Attributes) -> Self {
+        Self { lines, attributes, address: 0 }
     }
 
     fn dump_bytes(&mut self, limit: u16, buffer: &mut [u8]) -> usize {
         let mut offset = 0;
-        let max_column = min(self.screen[0].as_ref().len(), COLUMN);
-        let real_limit = min(limit, ((self.screen.len() - 1) * COLUMN + max_column) as u16);
+        let max_column = min(self.lines[0].as_ref().len(), COLUMN);
+        let real_limit = min(limit, ((self.lines.len() - 1) * COLUMN + max_column) as u16);
         while self.address < real_limit {
             let row = self.address as usize / COLUMN;
             let column = self.address as usize % COLUMN;
@@ -29,7 +31,7 @@ impl<'a, T: AsRef<[u8]>> NotNullWriter<'a, T> {
                 self.address += 1;
                 continue;
             }
-            let byte = self.screen[row].as_ref()[column];
+            let byte = self.lines[row].as_ref()[column];
             if byte == 0 {
                 self.address += 1;
                 continue;
@@ -104,97 +106,87 @@ pub fn revert(buffer: &mut [u8]) -> Display {
 
 #[cfg(test)]
 mod test {
-    use super::NotNullWriter;
+    use super::LinesWriter;
 
     #[test]
     fn test_low_address() {
         let mut output = [0u8; 32];
-        let mut screen = [[0u8; 30]; 16];
-        screen[7][29] = 't' as u8;
-        let mut writer = NotNullWriter::new(&screen, Default::default());
-        let expected = "[4, 0, 5, 0, 6, ef, 7, 74]";
-        let actual = format!("{:x?}", writer.write(&mut output).0);
-        assert_eq!(actual, expected);
+        let mut lines = [[0u8; 30]; 16];
+        lines[7][29] = 't' as u8;
+        let mut writer = LinesWriter::new(&lines, Default::default());
+        let expected = hex!("04 00 05 00 06 EF 07 74");
+        assert_eq!(writer.write(&mut output).0, expected);
     }
 
     #[test]
     fn test_high_address() {
         let mut output = [0u8; 32];
-        let mut screen = [[0u8; 30]; 16];
-        screen[8][29] = 't' as u8;
-        let mut writer = NotNullWriter::new(&screen, Default::default());
-        let expected = "[4, 0, 5, 1, 6, d, 7, 74]";
-        let actual = format!("{:x?}", writer.write(&mut output).0);
-        assert_eq!(actual, expected);
+        let mut lines = [[0u8; 30]; 16];
+        lines[8][29] = 't' as u8;
+        let mut writer = LinesWriter::new(&lines, Default::default());
+        let expected = hex!("04 00 05 01 06 0D 07 74");
+        assert_eq!(writer.write(&mut output).0, expected);
     }
 
     #[test]
     fn test_within_addreess() {
         let mut output = [0u8; 32];
-        let mut screen = [[0u8; 30]; 16];
-        screen[7][29] = 't' as u8;
-        screen[8][15] = 't' as u8;
-        let mut writer = NotNullWriter::new(&screen, Default::default());
-        let expected = "[4, 0, 5, 0, 6, ef, 7, 74, 6, ff, 7, 74]";
-        let actual = format!("{:x?}", writer.write(&mut output).0);
-        assert_eq!(actual, expected);
+        let mut lines = [[0u8; 30]; 16];
+        lines[7][29] = 't' as u8;
+        lines[8][15] = 't' as u8;
+        let mut writer = LinesWriter::new(&lines, Default::default());
+        let expected = hex!("04 00 05 00 06 EF 07 74 06 FF 07 74");
+        assert_eq!(writer.write(&mut output).0, expected);
     }
 
     #[test]
     fn test_cross_address() {
         let mut output = [0u8; 32];
-        let mut screen = [[0u8; 30]; 16];
-        screen[7][29] = 't' as u8;
-        screen[8][29] = 't' as u8;
-        let mut writer = NotNullWriter::new(&screen, Default::default());
-        let expected = "[4, 0, 5, 0, 6, ef, 7, 74, 5, 1, 6, d, 7, 74]";
-        let actual = format!("{:x?}", writer.write(&mut output).0);
-        assert_eq!(actual, expected);
+        let mut lines = [[0u8; 30]; 16];
+        lines[7][29] = 't' as u8;
+        lines[8][29] = 't' as u8;
+        let mut writer = LinesWriter::new(&lines, Default::default());
+        let expected = hex!("04 00 05 00 06 EF 07 74 05 01 06 0D 07 74");
+        assert_eq!(writer.write(&mut output).0, expected);
     }
 
     #[test]
     fn test_exactly_one_buffer() {
         let mut output = [0u8; 14];
-        let mut screen = [[0u8; 30]; 16];
-        screen[7][29] = 't' as u8;
-        screen[8][29] = 't' as u8;
-        let mut writer = NotNullWriter::new(&screen, Default::default());
-        let expected = "[4, 0, 5, 0, 6, ef, 7, 74, 5, 1, 6, d, 7, 74]";
-        let actual = format!("{:x?}", writer.write(&mut output).0);
-        assert_eq!(actual, expected);
-
+        let mut lines = [[0u8; 30]; 16];
+        lines[7][29] = 't' as u8;
+        lines[8][29] = 't' as u8;
+        let mut writer = LinesWriter::new(&lines, Default::default());
+        let expected = hex!("04 00 05 00 06 EF 07 74 05 01 06 0D 07 74");
+        assert_eq!(writer.write(&mut output).0, expected);
         assert_eq!(writer.write(&mut output).0.len(), 0)
     }
 
     #[test]
     fn test_multiple_buffer() {
         let mut output = [0u8; 8];
-        let mut screen = [[0u8; 30]; 16];
-        screen[7][29] = 't' as u8;
-        screen[8][29] = 't' as u8;
-        let mut writer = NotNullWriter::new(&screen, Default::default());
-        let expected = "[4, 0, 5, 0, 6, ef, 7, 74]";
-        let actual = format!("{:x?}", writer.write(&mut output).0);
-        assert_eq!(actual, expected);
+        let mut lines = [[0u8; 30]; 16];
+        lines[7][29] = 't' as u8;
+        lines[8][29] = 't' as u8;
+        let mut writer = LinesWriter::new(&lines, Default::default());
+        let expected = hex!("04 00 05 00 06 EF 07 74");
+        assert_eq!(writer.write(&mut output).0, expected);
 
-        let expected = "[4, 0, 5, 1, 6, d, 7, 74]";
-        let actual = format!("{:x?}", writer.write(&mut output).0);
-        assert_eq!(actual, expected);
+        let expected = hex!("04 00 05 01 06 0D 07 74");
+        assert_eq!(writer.write(&mut output).0, expected);
     }
 
     #[test]
     fn test_non_standard_screen() {
         let mut output = [0u8; 8];
-        let mut screen = [[0u8; 29]; 15];
-        screen[7][28] = 't' as u8;
-        screen[8][28] = 't' as u8;
-        let mut writer = NotNullWriter::new(&screen, Default::default());
-        let expected = "[4, 0, 5, 0, 6, ee, 7, 74]";
-        let actual = format!("{:x?}", writer.write(&mut output).0);
-        assert_eq!(actual, expected);
+        let mut lines = [[0u8; 29]; 15];
+        lines[7][28] = 't' as u8;
+        lines[8][28] = 't' as u8;
+        let mut writer = LinesWriter::new(&lines, Default::default());
+        let expected = hex!("04 00 05 00 06 EE 07 74");
+        assert_eq!(writer.write(&mut output).0, expected);
 
-        let expected = "[4, 0, 5, 1, 6, c, 7, 74]";
-        let actual = format!("{:x?}", writer.write(&mut output).0);
-        assert_eq!(actual, expected);
+        let expected = hex!("04 00 05 01 06 0C 07 74");
+        assert_eq!(writer.write(&mut output).0, expected);
     }
 }
