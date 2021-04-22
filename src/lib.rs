@@ -28,6 +28,7 @@ pub const SPI_MODE: Mode = MODE_3;
 pub struct MAX7456<SPI, CS> {
     spi: SPI,
     cs: CS,
+    display_enabled: bool,
 }
 
 pub struct Attributes {
@@ -51,14 +52,14 @@ where
     CS: OutputPin<Error = PE>,
 {
     pub fn new(spi: SPI, cs: CS) -> Self {
-        MAX7456 { spi, cs }
+        MAX7456 { spi, cs, display_enabled: false }
     }
 
     pub fn free(self) -> (SPI, CS) {
         (self.spi, self.cs)
     }
 
-    fn load<T: From<u8>>(&mut self, reg: Registers) -> Result<T, E> {
+    pub fn load<T: From<u8>>(&mut self, reg: Registers) -> Result<T, E> {
         let mut value = 0u8;
         self.cs.set_low().ok();
         self.spi.write(core::slice::from_ref(&reg.read_address()))?;
@@ -67,7 +68,7 @@ where
         Ok(T::from(value))
     }
 
-    fn write(&mut self, reg: Registers, value: u8) -> Result<(), E> {
+    pub fn write(&mut self, reg: Registers, value: u8) -> Result<(), E> {
         self.cs.set_low().ok();
         self.spi.write(&[reg as u8, value])?;
         self.cs.set_high().ok();
@@ -118,6 +119,10 @@ where
         self.write(Registers::DisplayMemoryMode, dmm.value)
     }
 
+    pub fn is_display_enabled(&mut self) -> bool {
+        self.display_enabled
+    }
+
     pub fn is_display_cleared(&mut self) -> Result<bool, E> {
         let dmm: Register<u8, DisplayMemoryMode> = self.load(Registers::DisplayMemoryMode)?;
         Ok(dmm.get(DisplayMemoryMode::Clear) == 0)
@@ -130,7 +135,10 @@ where
         Ok(())
     }
 
-    pub fn load_char(&mut self, index: u8, output: &mut CharData) -> Result<(), E> {
+    pub fn load_char(&mut self, index: u8, output: &mut CharData) -> Result<bool, E> {
+        if self.display_enabled {
+            return Ok(false);
+        }
         self.cs.set_low().ok();
         self.spi.write(&[
             Registers::CharacterMemoryAddressHigh as u8,
@@ -143,7 +151,7 @@ where
             self.write(Registers::CharacterMemoryAddressLow, i as u8)?;
             output[i] = self.load(Registers::CharacterMemoryDataOut)?;
         }
-        Ok(())
+        Ok(true)
     }
 
     pub fn store_char(
@@ -151,7 +159,10 @@ where
         index: u8,
         data: &CharData,
         delay: &mut dyn DelayMs<u8>,
-    ) -> Result<(), E> {
+    ) -> Result<bool, E> {
+        if self.display_enabled {
+            return Ok(false);
+        }
         let mut transaction = [0u8; STORE_CHAR_BUFFER_SIZE];
         build_store_char_operation(data, index, &mut transaction);
         self.spi.write(&transaction)?;
@@ -163,7 +174,7 @@ where
                 break;
             }
         }
-        Ok(())
+        Ok(true)
     }
 
     pub fn write_display(&mut self, display: &Display) -> Result<(), E> {
